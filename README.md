@@ -1,4 +1,4 @@
-# Internships, Placements and Graduate Take Home Assessment
+# Internships, placements and graduates
 
 [job-ad]: https://incident.io/careers#open-roles
 
