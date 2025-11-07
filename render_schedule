@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import click
+import json
+import pydantic
+from datetime import datetime, timezone
+from utils import Schedule, Override, render_schedule
+
+def validate_args(schedule: str, overrides: str, from_time: datetime | None, until_time: datetime | None) -> bool:
+    """Validate command line arguments.
+    Args:
+        schedule: Path to schedule file
+        overrides: Path to overrides file
+        from_time: Start time
+        until_time: End time
+    Returns:
+        True if arguments are valid, False otherwise
+    """
+    if not schedule:
+        click.echo('Missing schedule file')
+        click.echo('Usage: render_schedule --schedule <schedule_file> --overrides <overrides_file> --from <start_time> --until <end_time>')
+        click.echo('Example: render_schedule --schedule example/schedule.json --overrides example/overrides.json --from "2025-11-07T17:00:00Z" --until "2025-11-21T17:00:00Z"')
+        return False
+    if not overrides:
+        click.echo('Missing overrides file')
+        click.echo('Usage: render_schedule --schedule <schedule_file> --overrides <overrides_file> --from <start_time> --until <end_time>')
+        click.echo('Example: render_schedule --schedule example/schedule.json --overrides example/overrides.json --from "2025-11-07T17:00:00Z" --until "2025-11-21T17:00:00Z"')
+        return False
+    if from_time is None: # datetime is truthy
+        click.echo('Missing start time')
+        click.echo('Usage: render_schedule --schedule <schedule_file> --overrides <overrides_file> --from <start_time> --until <end_time>')
+        click.echo('Example: render_schedule --schedule example/schedule.json --overrides example/overrides.json --from "2025-11-07T17:00:00Z" --until "2025-11-21T17:00:00Z"')
+        return False
+    if until_time is None:
+        click.echo('Missing end time')
+        click.echo('Usage: render_schedule --schedule <schedule_file> --overrides <overrides_file> --from <start_time> --until <end_time>')
+        click.echo('Example: render_schedule --schedule example/schedule.json --overrides example/overrides.json --from "2025-11-07T17:00:00Z" --until "2025-11-21T17:00:00Z"')
+        return False
+    return True
+
+def load_schedule_and_overrides(schedule: str, overrides: str) -> tuple[Schedule, list[Override]]:
+    """Load and validate schedule and overrides.
+    Args:
+        schedule: Path to schedule file
+        overrides: Path to overrides file
+    Returns:
+        tuple[Schedule, list[Override]]: Schedule and overrides
+    """
+    try:
+        with open(schedule, 'r') as f:
+            schedule_dict = json.load(f)
+        schedule_data = Schedule(**schedule_dict)
+    except json.JSONDecodeError as e:
+        click.echo(f'Invalid schedule file: {e}')
+        exit(1)
+    except pydantic.ValidationError as e:
+        click.echo(f'Invalid schedule file: {e}')
+        exit(1)
+    except Exception as e:
+        click.echo(f'Error loading schedule file: {e}')
+        exit(1)
+    
+    # Load and validate overrides
+    try:
+        with open(overrides, 'r') as f:
+            overrides_list = json.load(f)
+        overrides_data = [Override(**override_dict) for override_dict in overrides_list]
+    except json.JSONDecodeError as e:
+        click.echo(f'Invalid overrides file: {e}')
+        exit(1)
+    except pydantic.ValidationError as e:
+        click.echo(f'Invalid overrides file: {e}')
+        exit(1)
+    except Exception as e:
+        click.echo(f'Error loading overrides file: {e}')
+        exit(1)
+    
+    return schedule_data, overrides_data
+
+@click.command()
+@click.option('--schedule', type=click.Path(exists=True), help='Schedule file')
+@click.option('--overrides', type=click.Path(exists=True), help='Overrides file')
+@click.option('--from', 'from_time', type=click.DateTime(formats=['%Y-%m-%dT%H:%M:%SZ']), help='Start time')
+@click.option('--until', 'until_time', type=click.DateTime(formats=['%Y-%m-%dT%H:%M:%SZ']), help='End time')
+def main(schedule, overrides, from_time, until_time):
+    if not validate_args(schedule, overrides, from_time, until_time):
+        exit(1)
+    
+    schedule_data, overrides_data = load_schedule_and_overrides(schedule, overrides)
+
+
+    from_time = from_time.replace(tzinfo=timezone.utc)
+    until_time = until_time.replace(tzinfo=timezone.utc)
+    
+    schedule_entries = render_schedule(schedule_data, overrides_data, from_time, until_time)
+    
+    # Convert datetime objects to ISO format strings
+    output = []
+    for entry in schedule_entries:
+        output.append({
+            'user': entry['user'],
+            'start_at': entry['start_at'].strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'end_at': entry['end_at'].strftime('%Y-%m-%dT%H:%M:%SZ')
+        })
+    
+    # Print as formatted JSON
+    print(json.dumps(output, indent=2))
+
+if __name__ == '__main__':
+    main()
